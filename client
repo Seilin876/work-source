@@ -1,14 +1,43 @@
 import socket
 import pyautogui
+import configparser
+import os
+import time
 
-def start_client(server_ip):
-    PORT = 65432
+# 配置檔名稱
+CONFIG_FILE = 'config.ini'
+
+def load_config():
+    config = configparser.ConfigParser()
+    
+    # 如果配置檔不存在，建立一個預設的
+    if not os.path.exists(CONFIG_FILE):
+        config['SERVER'] = {
+            'ip': '192.168.1.100',
+            'port': '65432'
+        }
+        config['SETTING'] = {
+            'target_window_title': 'Notepad', # 填入你測試軟體的標題
+            'auto_enter': 'True'
+        }
+        with open(CONFIG_FILE, 'w') as f:
+            config.write(f)
+        print(f"已產生預設配置檔 {CONFIG_FILE}，請修改後重啟程式。")
+    
+    config.read(CONFIG_FILE)
+    return config
+
+def start_client():
+    cfg = load_config()
+    server_ip = cfg['SERVER']['ip']
+    port = int(cfg['SERVER']['port'])
+    target_title = cfg['SETTING']['target_window_title']
     
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            print(f"嘗試連線至電腦 A ({server_ip})...")
-            s.connect((server_ip, PORT))
-            print("連線成功！等待掃碼數據...")
+            print(f"正在連線至伺服器 {server_ip}...")
+            s.connect((server_ip, port))
+            print("連線成功！監聽中...")
             
             while True:
                 data = s.recv(1024)
@@ -18,14 +47,23 @@ def start_client(server_ip):
                 barcode = data.decode('utf-8')
                 print(f"接收到條碼: {barcode}")
                 
-                # 模擬按鍵輸入至當前焦點視窗，並按下 Enter
+                # --- 視窗自動聚焦邏輯 ---
+                # 嘗試尋找標題含有 target_title 的視窗
+                windows = pyautogui.getWindowsWithTitle(target_title)
+                if windows:
+                    win = windows[0]
+                    if not win.isActive:
+                        win.activate() # 激發視窗
+                        time.sleep(0.1) # 等待視窗反應
+                
+                # 模擬輸入
                 pyautogui.write(barcode)
-                pyautogui.press('enter')
+                if cfg['SETTING'].getboolean('auto_enter'):
+                    pyautogui.press('enter')
                 
     except Exception as e:
-        print(f"連線中斷或錯誤: {e}")
+        print(f"發生錯誤: {e}")
+        input("按任意鍵結束...")
 
 if __name__ == "__main__":
-    # 請替換為電腦 A 的區域網路 IP 地址
-    SERVER_IP = '192.168.1.100' 
-    start_client(SERVER_IP)
+    start_client()
