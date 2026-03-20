@@ -1,0 +1,26 @@
+import socket
+
+def start_server():
+    # 1. 配置網路參數
+    HOST = '0.0.0.0'  # 監聽所有介面
+    PORT = 65432        # 自定義通訊埠
+    
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((HOST, PORT))
+        s.listen()
+        print(f"伺服器啟動，等待電腦 B 連線... (Port: {PORT})")
+        
+        conn, addr = s.accept()
+        with conn:
+            print(f"已與電腦 B 連線: {addr}")
+            while True:
+                # 2. 取得掃碼槍輸入 (假設掃碼槍結尾會帶 Enter)
+                barcode = input("請掃描條碼: ")
+                
+                if barcode:
+                    # 3. 透過 Socket 傳送數據
+                    conn.sendall(barcode.encode('utf-8'))
+                    print(f"已轉發條碼: {barcode}")
+
+if __name__ == "__main__":
+    start_server()
