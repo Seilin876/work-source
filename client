@@ -4,25 +4,23 @@ import configparser
 import os
 import time
 
-# 配置檔名稱
 CONFIG_FILE = 'config.ini'
 
 def load_config():
     config = configparser.ConfigParser()
-    
-    # 如果配置檔不存在，建立一個預設的
     if not os.path.exists(CONFIG_FILE):
         config['SERVER'] = {
             'ip': '192.168.1.100',
             'port': '65432'
         }
         config['SETTING'] = {
-            'target_window_title': 'Notepad', # 填入你測試軟體的標題
-            'auto_enter': 'True'
+            'target_window_title': 'Notepad',
+            'auto_enter': 'True',
+            'delay_seconds': '0.5'  # 新增：預設延遲 0.5 秒
         }
         with open(CONFIG_FILE, 'w') as f:
             config.write(f)
-        print(f"已產生預設配置檔 {CONFIG_FILE}，請修改後重啟程式。")
+        print(f"已產生配置檔 {CONFIG_FILE}。")
     
     config.read(CONFIG_FILE)
     return config
@@ -32,6 +30,8 @@ def start_client():
     server_ip = cfg['SERVER']['ip']
     port = int(cfg['SERVER']['port'])
     target_title = cfg['SETTING']['target_window_title']
+    # 讀取延遲秒數，轉為浮點數 (float)
+    delay_sec = cfg['SETTING'].getfloat('delay_seconds')
     
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -45,18 +45,20 @@ def start_client():
                     break
                 
                 barcode = data.decode('utf-8')
-                print(f"接收到條碼: {barcode}")
+                print(f"接收到數據: {barcode}")
                 
-                # --- 視窗自動聚焦邏輯 ---
-                # 嘗試尋找標題含有 target_title 的視窗
+                # 1. 視窗聚焦
                 windows = pyautogui.getWindowsWithTitle(target_title)
                 if windows:
                     win = windows[0]
                     if not win.isActive:
-                        win.activate() # 激發視窗
-                        time.sleep(0.1) # 等待視窗反應
+                        win.activate()
                 
-                # 模擬輸入
+                # 2. 執行延時 (Latency Execution)
+                # 在視窗切換後、輸入前進行等待，確保輸入框已就緒
+                time.sleep(delay_sec)
+                
+                # 3. 模擬輸入
                 pyautogui.write(barcode)
                 if cfg['SETTING'].getboolean('auto_enter'):
                     pyautogui.press('enter')
