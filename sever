@@ -1,26 +1,50 @@
 import socket
+from pynput import keyboard
+
+# 配置連線參數
+HOST = '0.0.0.0'
+PORT = 65432
+
+# 全域變數用於暫存條碼字串
+buffer = []
 
 def start_server():
-    # 1. 配置網路參數
-    HOST = '0.0.0.0'  # 監聽所有介面
-    PORT = 65432        # 自定義通訊埠
-    
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
         s.listen()
-        print(f"伺服器啟動，等待電腦 B 連線... (Port: {PORT})")
+        print(f"背景伺服器已啟動，等待電腦 B 連線... (Port: {PORT})")
         
         conn, addr = s.accept()
         with conn:
             print(f"已與電腦 B 連線: {addr}")
-            while True:
-                # 2. 取得掃碼槍輸入 (假設掃碼槍結尾會帶 Enter)
-                barcode = input("請掃描條碼: ")
-                
-                if barcode:
-                    # 3. 透過 Socket 傳送數據
-                    conn.sendall(barcode.encode('utf-8'))
-                    print(f"已轉發條碼: {barcode}")
+
+            # 定義按鍵監聽邏輯
+            def on_press(key):
+                global buffer
+                try:
+                    # 處理普通字元 (Alphanumeric)
+                    if hasattr(key, 'char') and key.char is not None:
+                        buffer.append(key.char)
+                    
+                    # 處理 Enter 鍵 (傳送訊號)
+                    elif key == keyboard.Key.enter:
+                        if buffer:
+                            barcode = "".join(buffer)
+                            conn.sendall(barcode.encode('utf-8'))
+                            print(f"背景轉發成功: {barcode}")
+                            buffer = [] # 清空緩衝區
+                    
+                    # 處理退格鍵 (選配，防止打錯)
+                    elif key == keyboard.Key.backspace:
+                        if buffer:
+                            buffer.pop()
+
+                except Exception as e:
+                    print(f"發送錯誤: {e}")
+
+            # 啟動全域監聽器
+            with keyboard.Listener(on_press=on_press) as listener:
+                listener.join()
 
 if __name__ == "__main__":
     start_server()
