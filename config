@@ -1,0 +1,7 @@
+[SERVER]
+ip = 192.168.x.x
+port = 65432
+
+[SETTING]
+target_window_title = Noise_Test_Software
+auto_enter = True
