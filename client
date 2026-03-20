@@ -1,0 +1,31 @@
+import socket
+import pyautogui
+
+def start_client(server_ip):
+    PORT = 65432
+    
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            print(f"嘗試連線至電腦 A ({server_ip})...")
+            s.connect((server_ip, PORT))
+            print("連線成功！等待掃碼數據...")
+            
+            while True:
+                data = s.recv(1024)
+                if not data:
+                    break
+                
+                barcode = data.decode('utf-8')
+                print(f"接收到條碼: {barcode}")
+                
+                # 模擬按鍵輸入至當前焦點視窗，並按下 Enter
+                pyautogui.write(barcode)
+                pyautogui.press('enter')
+                
+    except Exception as e:
+        print(f"連線中斷或錯誤: {e}")
+
+if __name__ == "__main__":
+    # 請替換為電腦 A 的區域網路 IP 地址
+    SERVER_IP = '192.168.1.100' 
+    start_client(SERVER_IP)
