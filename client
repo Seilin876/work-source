@@ -4,6 +4,7 @@ import configparser
 import os
 import time
 
+# 配置檔名稱
 CONFIG_FILE = 'config.ini'
 
 def load_config():
@@ -14,13 +15,12 @@ def load_config():
             'port': '65432'
         }
         config['SETTING'] = {
-            'target_window_title': 'Notepad',
             'auto_enter': 'True',
-            'delay_seconds': '0.5'  # 新增：預設延遲 0.5 秒
+            'delay_seconds': '0.5'
         }
         with open(CONFIG_FILE, 'w') as f:
             config.write(f)
-        print(f"已產生配置檔 {CONFIG_FILE}。")
+        print(f"已產生預設配置檔 {CONFIG_FILE}。")
     
     config.read(CONFIG_FILE)
     return config
@@ -29,15 +29,16 @@ def start_client():
     cfg = load_config()
     server_ip = cfg['SERVER']['ip']
     port = int(cfg['SERVER']['port'])
-    target_title = cfg['SETTING']['target_window_title']
-    # 讀取延遲秒數，轉為浮點數 (float)
     delay_sec = cfg['SETTING'].getfloat('delay_seconds')
     
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             print(f"正在連線至伺服器 {server_ip}...")
+            # 增加連線逾時設定，防止程式永久卡死
+            s.settimeout(10)
             s.connect((server_ip, port))
-            print("連線成功！監聽中...")
+            s.settimeout(None) # 連線成功後恢復為阻塞模式
+            print("連線成功！數據監聽中...")
             
             while True:
                 data = s.recv(1024)
@@ -47,25 +48,18 @@ def start_client():
                 barcode = data.decode('utf-8')
                 print(f"接收到數據: {barcode}")
                 
-                # 1. 視窗聚焦
-                windows = pyautogui.getWindowsWithTitle(target_title)
-                if windows:
-                    win = windows[0]
-                    if not win.isActive:
-                        win.activate()
+                # 執行延時：確保數據接收與模擬輸入之間有緩衝
+                if delay_sec > 0:
+                    time.sleep(delay_sec)
                 
-                # 2. 執行延時 (Latency Execution)
-                # 在視窗切換後、輸入前進行等待，確保輸入框已就緒
-                time.sleep(delay_sec)
-                
-                # 3. 模擬輸入
+                # 直接在當前游標處輸入
                 pyautogui.write(barcode)
                 if cfg['SETTING'].getboolean('auto_enter'):
                     pyautogui.press('enter')
                 
     except Exception as e:
-        print(f"發生錯誤: {e}")
-        input("按任意鍵結束...")
+        print(f"連線中斷或錯誤: {e}")
+        input("按任意鍵重新啟動或結束...")
 
 if __name__ == "__main__":
     start_client()
