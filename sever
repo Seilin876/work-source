@@ -1,18 +1,44 @@
 import socket
+import os
+import configparser
 from pynput import keyboard
 
-# 配置連線參數
-HOST = '0.0.0.0'
-PORT = 65432
+# 配置檔名稱
+CONFIG_FILE = 'server_config.ini'
+
+def load_config():
+    config = configparser.ConfigParser()
+    if not os.path.exists(CONFIG_FILE):
+        config['NETWORK'] = {
+            'host': '0.0.0.0',
+            'port': '65432'
+        }
+        config['FILTER'] = {
+            'target_length': '15',      # 目標條碼長度 (設為 0 代表不限制)
+            'target_prefix': 'DCZ300'   # 目標條碼前綴 (留空代表不限制)
+        }
+        with open(CONFIG_FILE, 'w') as f:
+            config.write(f)
+        print(f"已產生預設配置檔 {CONFIG_FILE}。")
+    
+    config.read(CONFIG_FILE)
+    return config
 
 # 全域變數用於暫存條碼字串
 buffer = []
 
 def start_server():
+    cfg = load_config()
+    HOST = cfg['NETWORK']['host']
+    PORT = int(cfg['NETWORK']['port'])
+    TARGET_LENGTH = int(cfg['FILTER']['target_length'])
+    TARGET_PREFIX = cfg['FILTER']['target_prefix']
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
         s.listen()
         print(f"背景伺服器已啟動，等待電腦 B 連線... (Port: {PORT})")
+        print(f"當前過濾規則: 長度={TARGET_LENGTH}, 前綴='{TARGET_PREFIX}'")
         
         conn, addr = s.accept()
         with conn:
@@ -30,11 +56,28 @@ def start_server():
                     elif key == keyboard.Key.enter:
                         if buffer:
                             barcode = "".join(buffer)
-                            conn.sendall(barcode.encode('utf-8'))
-                            print(f"背景轉發成功: {barcode}")
+                            
+                            # --- 執行過濾邏輯 (Filtering Logic) ---
+                            is_valid = True
+                            
+                            # 1. 長度驗證
+                            if TARGET_LENGTH > 0 and len(barcode) != TARGET_LENGTH:
+                                is_valid = False
+                            
+                            # 2. 前綴驗證
+                            if TARGET_PREFIX and not barcode.startswith(TARGET_PREFIX):
+                                is_valid = False
+                            
+                            # 3. 判斷是否轉發
+                            if is_valid:
+                                conn.sendall(barcode.encode('utf-8'))
+                                print(f"背景轉發成功: {barcode}")
+                            else:
+                                print(f"條件不符，已忽略: {barcode}")
+                            
                             buffer = [] # 清空緩衝區
                     
-                    # 處理退格鍵 (選配，防止打錯)
+                    # 處理退格鍵
                     elif key == keyboard.Key.backspace:
                         if buffer:
                             buffer.pop()
