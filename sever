@@ -14,8 +14,11 @@ def load_config():
             'port': '65432'
         }
         config['FILTER'] = {
-            'target_length': '15',      # 目標條碼長度 (設為 0 代表不限制)
-            'target_prefix': 'DCZ300'   # 目標條碼前綴 (留空代表不限制)
+            'target_length': '15',      
+            'target_prefix': 'DCZ300'   
+        }
+        config['LOGIC'] = {
+            'scan_cycle_count': '3'     # 每個 MES 作業循環的總掃描次數
         }
         with open(CONFIG_FILE, 'w') as f:
             config.write(f)
@@ -24,8 +27,9 @@ def load_config():
     config.read(CONFIG_FILE)
     return config
 
-# 全域變數用於暫存條碼字串
+# 全域變數狀態管理
 buffer = []
+cycle_barcodes = []  # 用於暫存同一循環內的 n 個條碼
 
 def start_server():
     cfg = load_config()
@@ -33,51 +37,60 @@ def start_server():
     PORT = int(cfg['NETWORK']['port'])
     TARGET_LENGTH = int(cfg['FILTER']['target_length'])
     TARGET_PREFIX = cfg['FILTER']['target_prefix']
+    SCAN_CYCLE_COUNT = int(cfg['LOGIC']['scan_cycle_count'])
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
         s.listen()
         print(f"背景伺服器已啟動，等待電腦 B 連線... (Port: {PORT})")
-        print(f"當前過濾規則: 長度={TARGET_LENGTH}, 前綴='{TARGET_PREFIX}'")
+        print(f"配置: 每 {SCAN_CYCLE_COUNT} 掃描為一循環，目標條件 [長度={TARGET_LENGTH}, 前綴='{TARGET_PREFIX}']")
         
         conn, addr = s.accept()
         with conn:
             print(f"已與電腦 B 連線: {addr}")
 
-            # 定義按鍵監聽邏輯
             def on_press(key):
-                global buffer
+                global buffer, cycle_barcodes
                 try:
-                    # 處理普通字元 (Alphanumeric)
                     if hasattr(key, 'char') and key.char is not None:
                         buffer.append(key.char)
                     
-                    # 處理 Enter 鍵 (傳送訊號)
                     elif key == keyboard.Key.enter:
                         if buffer:
                             barcode = "".join(buffer)
+                            cycle_barcodes.append(barcode)
+                            current_count = len(cycle_barcodes)
                             
-                            # --- 執行過濾邏輯 (Filtering Logic) ---
-                            is_valid = True
+                            print(f"[循環進度 {current_count}/{SCAN_CYCLE_COUNT}] 已記錄: {barcode}")
+                            buffer = [] 
                             
-                            # 1. 長度驗證
-                            if TARGET_LENGTH > 0 and len(barcode) != TARGET_LENGTH:
-                                is_valid = False
-                            
-                            # 2. 前綴驗證
-                            if TARGET_PREFIX and not barcode.startswith(TARGET_PREFIX):
-                                is_valid = False
-                            
-                            # 3. 判斷是否轉發
-                            if is_valid:
-                                conn.sendall(barcode.encode('utf-8'))
-                                print(f"背景轉發成功: {barcode}")
-                            else:
-                                print(f"條件不符，已忽略: {barcode}")
-                            
-                            buffer = [] # 清空緩衝區
-                    
-                    # 處理退格鍵
+                            # --- 循環計數達標，執行過濾與轉發 ---
+                            if current_count >= SCAN_CYCLE_COUNT:
+                                print("--- 循環完成，開始分析數據 ---")
+                                target_to_send = None
+                                
+                                # 在該次循環的 n 個條碼中尋找符合條件者
+                                for b in cycle_barcodes:
+                                    is_valid = True
+                                    if TARGET_LENGTH > 0 and len(b) != TARGET_LENGTH:
+                                        is_valid = False
+                                    if TARGET_PREFIX and not b.startswith(TARGET_PREFIX):
+                                        is_valid = False
+                                        
+                                    if is_valid:
+                                        target_to_send = b
+                                        break # 找到首個符合目標即停止
+                                
+                                # 執行轉發
+                                if target_to_send:
+                                    conn.sendall(target_to_send.encode('utf-8'))
+                                    print(f"==> 成功轉發目標條碼: {target_to_send}\n")
+                                else:
+                                    print("==> 警告: 此循環內查無符合規則的條碼，未轉發。\n")
+                                
+                                # 清空循環陣列，準備迎接下一個 MES 流程
+                                cycle_barcodes = []
+
                     elif key == keyboard.Key.backspace:
                         if buffer:
                             buffer.pop()
@@ -85,7 +98,6 @@ def start_server():
                 except Exception as e:
                     print(f"發送錯誤: {e}")
 
-            # 啟動全域監聽器
             with keyboard.Listener(on_press=on_press) as listener:
                 listener.join()
 
